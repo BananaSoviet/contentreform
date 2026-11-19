@@ -1,0 +1,40 @@
+{
+  "mod_format": 1,
+  "name": "m3-add-copy",
+  "version": "0.1.0",
+  "authors": [
+    "worker (tarjeta t_eb6bb7fd)"
+  ],
+  "description": "F19-C3: añade una fila a #983 clonando la fila 4001 y le da texto propio en jp con el id 3001. Texto inventado para la prueba; no contiene texto del juego.",
+  "game": {
+    "title": "pokopia",
+    "version": "2.0.1a",
+    "container_md5": {
+      "LD_C0_R.BIN": "358a672d506ce2b0399149ede64a6760",
+      "LI_C0_R.IDX": "7e056a097f28a62f002ad961a611edf8"
+    }
+  },
+  "requires": [],
+  "edits": [],
+  "text": [],
+  "files": [],
+  "add": [
+    {
+      "table": 983,
+      "copy_from": 4001,
+      "why": "Fila nueva 4600: clon de la fila 4001 para que el motor reciba una fila completa; el nameIndex se reescribe en `copy`."
+    }
+  ],
+  "copy": [
+    {
+      "table": 983,
+      "row": 4600,
+      "source_id": 4,
+      "new_id": 3001,
+      "langs": ["jp", "es"],
+      "singular": "BANCO M3 PRUEBA",
+      "plural": "BANCOS M3 PRUEBA",
+      "why": "Clona el bloque de 6 slots del id 4 (tiene solo el singular) al id nuevo 3001 en las 9 tablas; escribe jp y es, y apunta el nameIndex de la fila nueva a 3001-3=2998 (SPEC-NAMES 6.3). El es se a\u00f1ade para el banco: Edu juega en espa\u00f1ol y sin \u00e9l el hueco sale sin nombre."
+    }
+  ]
+}

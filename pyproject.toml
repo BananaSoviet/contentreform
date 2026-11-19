@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "contentreform"
+dynamic = ["version"]
+description = "ContentReForm — kit de herramientas para modding de Pokopia native: contenedor, mods declarativos y save."
+# Fijado a lo que se midio: la suite se declara para 3.11 y NO se firma fuera de el.
+requires-python = ">=3.11,<3.12"
+
+[project.scripts]
+pkp = "pokopia.cli:main"
+
+[tool.setuptools.dynamic]
+# Una sola cifra de version en todo el proyecto: la de pokopia.__version__,
+# que es la que imprime `pkp --version` (opcion A, tarjeta t_2d71193b).
+version = {attr = "pokopia.__version__"}
+
+[tool.setuptools.packages.find]
+# Flat layout: solo viaja el paquete del kit. El repo tiene ademas mods/,
+# fixtures/, informes/... con .py sueltos, y el descubrimiento automatico
+# los contaria como paquetes de nivel superior (PackageDiscoveryError,
+# medido el 18-nov con `uv build`). Discovery explicito, como pide el backend.
+include = ["pokopia*"]
+
+[tool.pokopia]
+# Build de zlib con el que se midio la identidad byte a byte del contenedor.
+# Con zlib-ng solo 488/12298 entradas salen identicas (informe t_91cb4081).
+zlib = "1.3.2"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
