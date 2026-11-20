@@ -210,3 +210,28 @@ validated against its own synthetic image — the way the suite does it — was 
 whatever container the environment pointed at and came out `FALLO`. `overlay.doctor()` no
 longer reads the environment: the CLI is the one that resolves both references and passes
 them in (`container` = declared, `container_entorno` = default).
+
+### Package mode: naming the mod and the table (F21 C4, M7)
+
+With one or more package arguments, `doctor` answers a different question: **which mod and
+which table will break the game?** It reads folders or `.pkmod` files through the existing
+`Origen` reader, reads the dump through `pokopia.container`, and takes geometry from
+`pokopia.tables.registry`. No new container reader, and nothing is written.
+
+```
+pkp mod doctor <paquete.pkmod> [otro/] --dump <carpeta del contenedor>
+```
+
+Each check names the mod by its `id` and addresses a cell as `#<tabla> fila <fila> +<offset>`
+(the notation used by SPEC F21 §2). Example, measured on a broken package:
+
+```
+FALLO celda.m7-malo.set[0]   mod 'm7-malo': #983 fila 63 +67 u16 cruza el stride de 68 B de la tabla #983
+resultado: FALLIDO (1 fallo(s), 0 aviso(s))
+```
+
+`FALLO`: unreadable package, table absent from the registry, geometry that does not match the
+dump, a row outside `0..count-1`, a cell that crosses the stride, an unsupported type, or two
+mods writing the same cell without `override`. `aviso`: fewer than 1.000 cells is fine but
+more triggers the F19-C6 recount warning, a `text` that leaves languages unfilled, and any
+check that could not be made (for example, no `--dump` and no `PKP_ROMFS`).

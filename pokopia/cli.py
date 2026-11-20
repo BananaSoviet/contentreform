@@ -12,6 +12,7 @@ Comandos implementados aqui:
     pkp mod merge <a> <b> [-o <dir>]
     pkp mod apply <carpeta> [--dry-run | --yes]
     pkp mod pack <carpeta> [-o <dir>] [--img <RomFS.img>]
+    pkp mod unpack <paquete.pkmod> [-o <dir>] [--diff <dump>] [--forzar]
     pkp mod install <carpeta|paquete> --overlay <almacen> [--img <RomFS.img>]
     pkp mod uninstall <mod> --overlay <almacen> --img <RomFS.img>
     pkp mod status --overlay <almacen> [--img <RomFS.img>]
@@ -69,9 +70,10 @@ from .mod import (
 )
 from .mod.manifest import ContainerView, LEGACY_MANIFEST, MANIFEST, LICENSE_SPDX
 from .mod.errors import Issue, Report
-from .mod.f21_validate import LineMap, annotate, validate_contract
+from .mod.f21_validate import LineMap, annotate, doctor_paquetes, validate_contract
 from .mod.toml_manifest import AUTOR_PLACEHOLDER, dumps, id_problema
 from .mod.example import escribir as escribir_ejemplo
+from .mod.unpack import desempaquetar
 from .mod.overlay import (
     aviso_separador,
     destino_por_defecto,
@@ -626,6 +628,27 @@ def cmd_mod_pack(args) -> int:
     return EXIT_OK
 
 
+def cmd_mod_unpack(args) -> int:
+    result = desempaquetar(args.paquete, destino=args.out, dump=args.dump,
+                           forzar=args.forzar)
+    out(sys.stdout, "paquete: %s" % result["paquete"])
+    out(sys.stdout, "mod: %s@%s" % (result["mod"], result["version"]))
+    out(sys.stdout, "extraido: %s (%d fichero(s))"
+        % (result["destino"], result["ficheros"]))
+    if result["dump"]:
+        out(sys.stdout, "dump: %s (solo lectura)" % result["dump"])
+        out(sys.stdout, "diff: %d celda(s) cambiada(s) de %d declarada(s)"
+            % (len(result["diff"]), result["declaradas"]))
+        for cambio in result["diff"]:
+            out(sys.stdout, "%s %s → %s"
+                % (cambio["celda"], cambio["antes"], cambio["despues"]))
+    else:
+        out(sys.stdout, "diff: omitido (sin --dump)")
+    for aviso in result["avisos"]:
+        out(sys.stdout, "aviso: %s" % aviso)
+    return EXIT_OK
+
+
 def _overlay(args) -> str:
     store = args.overlay or destino_por_defecto()
     if not store:
@@ -724,6 +747,23 @@ def cmd_mod_status(args) -> int:
 
 
 def cmd_mod_doctor(args) -> int:
+    # Con paquetes: F21 C4, diagnostico de celdas nombrando mod y tabla. Sin
+    # ellos: el doctor historico del almacen de overlay (docs/MOD-OVERLAY.md §7).
+    if getattr(args, "paquetes", None):
+        volcado = args.dump or args.container or os.environ.get("PKP_ROMFS")
+        result = doctor_paquetes(args.paquetes, dump=volcado)
+        if args.json:
+            json.dump(result, sys.stdout, indent=2, ensure_ascii=False)
+            out(sys.stdout)
+            return EXIT_OK if result["ok"] else EXIT_INVALID
+        for c in result["checks"]:
+            etiqueta = "ok  " if c["ok"] else ("FALLO" if c["fatal"] else "aviso")
+            out(sys.stdout, "%-5s %-46s %s" % (etiqueta, c["check"], c["detail"]))
+        out(sys.stdout, "resultado: %s (%d fallo(s), %d aviso(s))"
+            % ("FALLIDO" if not result["ok"] else
+               "sano con avisos" if result["avisos"] else "sano",
+               result["fallos"], result["avisos"]))
+        return EXIT_OK if result["ok"] else EXIT_INVALID
     # `--container` es una referencia **declarada** por quien ejecuta: si el mod se
     # hizo para otro build, es un FALLO. `PKP_ROMFS` es el contenedor por defecto del
     # kit y solo se compara como aviso: puede ser otro dump y el overlay carga igual.
@@ -2280,6 +2320,17 @@ def build_parser() -> argparse.ArgumentParser:
                    help="RomFS.img para anotar el sha256 del original (o PKP_ROMFS_IMG)")
     p.set_defaults(func=cmd_mod_pack)
 
+    p = msub.add_parser("unpack", help="extrae un .pkmod y, con --diff, lista celdas",
+                        parents=[common])
+    p.add_argument("paquete", help="paquete .pkmod (o carpeta de trabajo)")
+    p.add_argument("-o", "--out", default=None,
+                   help="carpeta de salida (por defecto build/pkmod-unpack/<id>)")
+    p.add_argument("--diff", dest="dump", default=None, metavar="DUMP",
+                   help="carpeta del contenedor base, solo lectura")
+    p.add_argument("--forzar", action="store_true",
+                   help="sobrescribir ficheros si la carpeta de salida ya tiene")
+    p.set_defaults(func=cmd_mod_unpack)
+
     p = msub.add_parser("install", help="deja el mod en el overlay, sin tocar el img",
                         parents=[common])
     p.add_argument("origen", help="carpeta del mod o paquete .pkmod")
@@ -2316,8 +2367,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--img", default=None, help="RomFS.img (o PKP_ROMFS_IMG)")
     p.set_defaults(func=cmd_mod_status)
 
-    p = msub.add_parser("doctor", help="coherencia del almacen y del img",
+    p = msub.add_parser("doctor", help="coherencia del almacen y del img, o de paquetes contra el dump",
                         parents=[common])
+    p.add_argument("paquetes", nargs="*",
+                   help="carpeta(s) de mod o .pkmod a diagnosticar (F21 C4)")
+    p.add_argument("--dump", default=None,
+                   help="carpeta del contenedor real del jugador (o PKP_ROMFS)")
     p.add_argument("--overlay", default=None,
                    help="carpeta del almacen de mods (o PKP_OVERLAY)")
     p.add_argument("--img", default=None, help="RomFS.img (o PKP_ROMFS_IMG)")

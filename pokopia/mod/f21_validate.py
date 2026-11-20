@@ -20,9 +20,11 @@ import os
 import re
 import tomllib
 
-from .. import tables
+from .. import paths, tables
 from . import types as mt
-from .errors import Report
+from .errors import ModError, Report
+from .manifest import ContainerView
+from .overlay import Origen
 
 #: F19-C5 / SPEC F19 §3: única versión del contrato que conoce el kit.
 CONTRACT = "1"
@@ -434,3 +436,189 @@ def validate_contract(mod, line_map: LineMap, package_dir: str) -> Report:
     # 8 · geometría declarada en tables/<id>.toml
     _check_geometria(package_dir, rep)
     return rep
+
+
+# --------------------------------------------------------------------------
+# F21 C4 · `doctor` de paquetes: nombre de mod y de tabla
+# --------------------------------------------------------------------------
+
+def _celda_str(table, row, offset, typ: str = "") -> str:
+    """La dirección de una celda, en el formato que cita SPEC F21 §2."""
+    texto = "#%s fila %s +%s" % (table, row, offset)
+    return texto + (" %s" % typ if typ else "")
+
+
+def _entero_valido(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _celdas_de(mod) -> list[dict]:
+    """Celdas declaradas, tanto del contrato F19 como del formato anterior.
+
+    No hay lector nuevo: `Origen.leer_manifest()` ya devolvió el `Mod` y aquí
+    solo se normalizan sus dos vocabularios (`[[set]]` y `edits[]`) para poder
+    compararlos entre mods.
+    """
+    celdas: list[dict] = []
+    doc = mod.doc
+    override_mod = bool(doc.get("override"))
+    for i, item in enumerate(doc.get("set") or []):
+        if not isinstance(item, dict):
+            continue
+        celdas.append({
+            "table": item.get("table"), "row": item.get("row"),
+            "offset": item.get("offset"), "type": item.get("type"),
+            "where": "set[%d]" % i,
+            "override": override_mod or bool(item.get("override")),
+        })
+    for edit in getattr(mod, "edits", []) or []:
+        celdas.append({
+            "table": edit.table, "row": edit.row, "offset": edit.offset,
+            "type": edit.type, "where": edit.where(),
+            "override": override_mod or bool(getattr(edit, "override", False)),
+        })
+    return celdas
+
+
+def doctor_paquetes(paquetes: list[str], dump: str | None = None) -> dict:
+    """F21 C4: diagnostica paquetes contra el dump real, nombrando mod y tabla.
+
+    Reutiliza `Origen` (carpeta o `.pkmod`), `ContainerView` (que lee el
+    contenedor con `pokopia.container`) y `pokopia.tables.registry` para la
+    geometría. Nada escribe: el dump se abre solo en lectura. La forma de cada
+    comprobación es la misma de `overlay.doctor()` para que la CLI imprima las
+    dos sin ramas distintas.
+    """
+    chequeos: list[dict] = []
+
+    def apunta(nombre: str, ok: bool, detalle: str, grave: bool = True) -> None:
+        chequeos.append({"check": nombre, "ok": bool(ok), "detail": detalle,
+                         "fatal": grave})
+
+    view = None
+    if dump:
+        try:
+            cont = paths.resolve_container(dump, must_exist=False)
+        except (OSError, ValueError) as exc:
+            cont = None
+            apunta("doctor.dump", False, "no se pudo resolver %s: %s" % (dump, exc),
+                   grave=False)
+        if cont is not None and os.path.isfile(cont.idx) and os.path.isfile(cont.bin):
+            try:
+                view = ContainerView(cont)
+                apunta("doctor.dump", True, cont.dir)
+            except (OSError, ValueError) as exc:
+                apunta("doctor.dump", False,
+                       "no se pudo leer el contenedor de %s: %s" % (cont.dir, exc),
+                       grave=False)
+        elif cont is not None:
+            apunta("doctor.dump", False,
+                   "sin contenedor en %s: la geometría solo se compara con el registro "
+                   "del kit (pasa --dump <carpeta>)" % cont.dir, grave=False)
+    else:
+        apunta("doctor.dump", False,
+               "sin --dump: la geometría solo se compara con el registro del kit",
+               grave=False)
+
+    por_celda: dict[tuple, dict[str, bool]] = {}
+    nombres: list[str] = []
+
+    for ruta in paquetes:
+        try:
+            mod = Origen(ruta).leer_manifest()
+        except (OSError, ValueError, ModError) as exc:
+            apunta("doctor.paquete.%s" % os.path.basename(ruta), False, str(exc))
+            continue
+        nombre = mod.name or os.path.basename(ruta)
+        nombres.append(nombre)
+        apunta("doctor.paquete.%s" % nombre, True, ruta)
+
+        celdas = _celdas_de(mod)
+        tablas = sorted({c["table"] for c in celdas if _entero_valido(c["table"])})
+        for tabla in tablas:
+            spec = tables.get(tabla)
+            if spec is None:
+                apunta("tabla.#%d" % tabla, False,
+                       "mod '%s' escribe en la tabla #%d, que no está en el registro "
+                       "del kit" % (nombre, tabla))
+                continue
+            if view is None:
+                apunta("tabla.#%d" % tabla, True,
+                       "mod '%s': tabla #%d según el registro del kit (sin dump)"
+                       % (nombre, tabla))
+                continue
+            try:
+                blob = view.payload(tabla)
+                count, version = tables.check_header(spec, blob)
+                ok = spec.records_end <= len(blob)
+                detalle = ("mod '%s': tabla #%d count %d, version %d, stride %d B, "
+                           "payload %d B" % (nombre, tabla, count, version,
+                                             spec.stride, len(blob)))
+                apunta("tabla.#%d" % tabla, ok, detalle)
+            except (OSError, ValueError, ModError) as exc:
+                apunta("tabla.#%d" % tabla, False,
+                       "mod '%s': la tabla #%d no cuadra con el dump: %s"
+                       % (nombre, tabla, exc))
+
+        for celda in celdas:
+            tabla, fila, offset = celda["table"], celda["row"], celda["offset"]
+            direccion = _celda_str(tabla, fila, offset, celda["type"] or "")
+            etiqueta = "celda.%s.%s" % (nombre, celda["where"])
+            if not all(_entero_valido(x) for x in (tabla, fila, offset)):
+                apunta(etiqueta, False,
+                       "mod '%s': %s tiene table/row/offset no enteros o negativos"
+                       % (nombre, direccion))
+                continue
+            spec = tables.get(tabla)
+            if spec is None:             # ya se dijo en el chequeo de tabla
+                continue
+            if fila >= spec.count:
+                apunta(etiqueta, False,
+                       "mod '%s': %s fuera de rango (0..%d) de la tabla #%d"
+                       % (nombre, direccion, spec.count - 1, tabla))
+                continue
+            size = mt.type_size(celda["type"]) if isinstance(celda["type"], str) else None
+            if size is None:
+                apunta(etiqueta, False,
+                       "mod '%s': %s tiene un tipo no admitido"
+                       % (nombre, direccion))
+                continue
+            if offset + size > spec.stride:
+                apunta(etiqueta, False,
+                       "mod '%s': %s cruza el stride de %d B de la tabla #%d"
+                       % (nombre, direccion, spec.stride, tabla))
+                continue
+            clave = (tabla, fila, offset)
+            por_mod = por_celda.setdefault(clave, {})
+            por_mod[nombre] = celda["override"] or por_mod.get(nombre, False)
+
+        if len(celdas) > 1000:
+            apunta("mod.%s.celdas" % nombre, False,
+                   "mod '%s' cambia %d celdas en %d tabla(s): recuento obligatorio "
+                   "de F19-C6 a partir de 1000" % (nombre, len(celdas), len(tablas)),
+                   grave=False)
+
+        for i, item in enumerate(mod.doc.get("text") or []):
+            if not isinstance(item, dict) or "langs" not in item:
+                continue
+            langs = item.get("langs")
+            if not isinstance(langs, list):
+                continue
+            faltan = [lang for lang in tables.NAMES_LANGS if lang not in langs]
+            if faltan:
+                apunta("mod.%s.texto.%s" % (nombre, item.get("id", i)), False,
+                       "mod '%s': el texto id %s deja idiomas sin rellenar: %s"
+                       % (nombre, item.get("id", i), ", ".join(faltan)), grave=False)
+
+    for (tabla, fila, offset), mods in sorted(por_celda.items()):
+        if len(mods) < 2 or any(mods.values()):
+            continue
+        apunta("conflicto.#%d.fila.%d" % (tabla, fila), False,
+               "los mods %s escriben la misma celda %s sin override"
+               % (" y ".join("'%s'" % nombre for nombre in sorted(mods)),
+                  _celda_str(tabla, fila, offset)))
+
+    return {"ok": all(c["ok"] for c in chequeos if c["fatal"]),
+            "paquetes": nombres, "checks": chequeos,
+            "fallos": sum(1 for c in chequeos if not c["ok"] and c["fatal"]),
+            "avisos": sum(1 for c in chequeos if not c["ok"] and not c["fatal"])}
