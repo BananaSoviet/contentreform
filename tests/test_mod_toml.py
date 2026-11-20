@@ -26,7 +26,7 @@ import pytest
 from pokopia.cli import main
 from pokopia.mod import load_mod, validate
 from pokopia.mod.errors import ModError
-from pokopia.mod.manifest import LEGACY_MANIFEST, MANIFEST
+from pokopia.mod.manifest import LEGACY_MANIFEST, MANIFEST, LICENSE_SPDX
 from pokopia.mod.overlay import Origen
 from pokopia.mod.toml_manifest import dumps, id_problema
 
@@ -34,8 +34,8 @@ from tests import helpers
 
 #: Claves que `pkp mod new` puede escribir. Ninguna es nueva: todas existian en
 #: `mod.json` o son las que Modtopia pide en su `mod.toml`.
-CLAVES_DE_NEW = {"id", "version", "name", "authors", "description", "game",
-                 "mod_format", "title", "container_md5"}
+CLAVES_DE_NEW = {"id", "version", "name", "authors", "description", "license",
+                 "game", "mod_format", "title", "container_md5"}
 
 
 def _new(tmp_path, nombre="mi-mod"):
@@ -62,6 +62,8 @@ def test_1_new_escribe_mod_toml_con_id_version_y_game(tmp_path):
     assert doc["version"] == "0.1.0"
     assert doc["game"] == ["2.0.1a"]
     assert doc["mod_format"] == 1
+    assert doc["license"] == "GPL-3.0-or-later"
+    assert doc["license"] == LICENSE_SPDX
     assert set(doc) <= CLAVES_DE_NEW, "claves inventadas: %s" % (set(doc) - CLAVES_DE_NEW)
     assert not any(key == "mod" for key in doc), \
         "el id de Modtopia va en la raiz, no en una tabla [mod] (mt_manifest.c:149-156)"
@@ -71,6 +73,30 @@ def test_2_validate_acepta_el_mod_toml_con_exit_0(tmp_path, capsys):
     destino = _new(tmp_path)
     assert main(["mod", "validate", destino, "--no-container"]) == 0
     assert "resultado: OK" in capsys.readouterr().out
+
+
+def test_authors_no_filtra_el_login_del_sistema(tmp_path, monkeypatch):
+    """D-025 + PROCEDENCIA §5: ni `mod new` ni `mod example` escriben USER/USERNAME."""
+    login_user = "LOGIN_DEL_SISTEMA_EN_USER"
+    login_username = "LOGIN_DEL_SISTEMA_EN_USERNAME"
+    monkeypatch.setenv("USER", login_user)
+    monkeypatch.setenv("USERNAME", login_username)
+
+    with helpers.records_spec():
+        cont = helpers.make_container(str(tmp_path / "c"), {1: b"x" * 10})
+        nuevo = str(tmp_path / "mod-nuevo")
+        assert main(["mod", "new", "mod-nuevo", "--dir", nuevo,
+                     "--container", cont.dir]) == 0
+    ejemplo = str(tmp_path / "mod-ejemplo")
+    assert main(["mod", "example", ejemplo]) == 0
+
+    for destino in (nuevo, ejemplo):
+        ruta = os.path.join(destino, MANIFEST)
+        with open(ruta, encoding="utf-8") as fh:
+            texto = fh.read()
+        assert login_user not in texto, ruta
+        assert login_username not in texto, ruta
+        assert tomllib.loads(texto)["authors"] == ["tu nombre"], ruta
 
 
 # --------------------------------------------------------------------------
@@ -274,3 +300,77 @@ def test_id_problema_cubre_las_reglas_de_modtopia():
     assert id_problema("1mod") is not None           # tiene que empezar por letra
     assert id_problema("mi mod") is not None         # espacio
     assert id_problema("m" * 65) is not None         # mas de 64
+
+
+# --------------------------------------------------------------------------
+# B4: license SPDX en los manifiestos que genera el kit
+# --------------------------------------------------------------------------
+
+def test_license_de_pyproject_es_la_misma_cadena_spdx():
+    """Una sola cadena: la de pyproject y la que escriben new/example/pack."""
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(raiz, "pyproject.toml"), encoding="utf-8") as fh:
+        cfg = tomllib.loads(fh.read())
+    assert cfg["project"]["license"] == LICENSE_SPDX == "GPL-3.0-or-later"
+
+
+def test_new_y_validate_con_license_sin_aviso_de_clave_desconocida(tmp_path, capsys):
+    destino = _new(tmp_path)
+    assert main(["mod", "validate", destino, "--no-container"]) == 0
+    salida = capsys.readouterr().out
+    assert "clave desconocida ignorada" not in salida
+    mod = load_mod(destino)
+    assert mod.report.ok, [str(i) for i in mod.report.issues]
+    assert mod.license == LICENSE_SPDX
+
+
+def test_example_escribe_license_y_validate_la_acepta(tmp_path):
+    destino = os.path.join(str(tmp_path), "ejemplo")
+    assert main(["mod", "example", destino]) == 0
+    with open(os.path.join(destino, MANIFEST), encoding="utf-8") as fh:
+        doc = tomllib.loads(fh.read())
+    assert doc["license"] == LICENSE_SPDX
+    assert main(["mod", "validate", destino, "--no-container", "--no-expect"]) == 0
+    mod = load_mod(destino)
+    assert mod.license == LICENSE_SPDX
+
+
+def test_pack_no_pierde_license(tmp_path):
+    modulo = os.path.join(str(tmp_path), "mod")
+    salida = os.path.join(str(tmp_path), "paquetes")
+    assert main(["mod", "example", modulo]) == 0
+    assert main(["mod", "pack", modulo, "--out", salida]) == 0
+    paquetes = [n for n in os.listdir(salida) if n.endswith(".pkmod")]
+    assert len(paquetes) == 1, paquetes
+    with zipfile.ZipFile(os.path.join(salida, paquetes[0])) as zf:
+        doc = tomllib.loads(zf.read(MANIFEST).decode("utf-8"))
+    assert doc["license"] == LICENSE_SPDX
+    assert load_mod(modulo).license == LICENSE_SPDX
+
+
+def test_license_personalizada_sobrevive_a_lectura_y_escritura(tmp_path):
+    """El lector no reescribe la licencia ajena: la conserva tal cual."""
+    doc = helpers.mod_romfs_doc("otra-licencia", [
+        {"path": "motor_asset/x.bin", "file": "payload/x.bin", "why": "x"}],
+        license="GPL-3.0-only")
+    texto = dumps(doc)
+    assert 'license = "GPL-3.0-only"' in texto
+    carpeta = str(tmp_path / "otra-licencia")
+    os.makedirs(carpeta, exist_ok=True)
+    with open(os.path.join(carpeta, MANIFEST), "w", encoding="utf-8") as fh:
+        fh.write(texto)
+    mod = load_mod(carpeta)
+    assert mod.report.ok, [str(i) for i in mod.report.issues]
+    assert mod.license == "GPL-3.0-only"
+    assert dumps(mod.doc) == texto
+
+
+def test_mod_json_legado_con_license_carga_igual(tmp_path):
+    doc = helpers.mod_romfs_doc("legado-con-license", [
+        {"path": "motor_asset/x.bin", "file": "payload/x.bin", "why": "x"}],
+        license=LICENSE_SPDX)
+    ruta = helpers.write_mod(str(tmp_path / "legado"), doc)
+    mod = load_mod(os.path.dirname(ruta))
+    assert mod.report.ok, [str(i) for i in mod.report.issues]
+    assert mod.manifest.endswith(LEGACY_MANIFEST)
+    assert mod.license == LICENSE_SPDX

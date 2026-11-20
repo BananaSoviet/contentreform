@@ -6,6 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "contentreform"
 dynamic = ["version"]
 description = "ContentReForm — kit de herramientas para modding de Pokopia native: contenedor, mods declarativos y save."
+# SPDX (PEP 639). La misma cadena la escribe `LICENSE_SPDX` en los mod.toml que
+# genera el kit; tests/test_mod_toml.py comprueba que no se separan.
+license = "GPL-3.0-or-later"
 # Fijado a lo que se midio: la suite se declara para 3.11 y NO se firma fuera de el.
 requires-python = ">=3.11,<3.12"
 

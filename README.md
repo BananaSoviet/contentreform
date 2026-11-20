@@ -25,7 +25,7 @@ figure and the full list of what is deliberately absent.
 | A public **repacker** for that container, verified byte for byte: 12,298 / 12,298 payloads and 0 bytes different on rebuild, with the zlib build declared in `pyproject.toml`. | A decryption or key tool. It never handles a key and never reads an encrypted file. |
 | A **declarative mod format**: every edit declares which bytes it expects to find and refuses to apply if they are not there. **`mod.toml` is the native manifest** (the bridge `D-028`, decided 17-nov) and a `mod.json` still loads as **legacy** — same contract, one package, two readers. | An emulator, an online-play tool or anything for multiplayer. There is no networking code in this repository. |
 | A save reader/writer for **save version 2.0.1 only**, kept in **maintenance**: it still works for the save version it supports, with its mandatory backup and printed undo command, and it gets no new features. | A general save editor, and not a save editing tool under development. For save editing the living reference is [PokoHex](https://github.com/berichan/PokoHex) (C#, GPL-3.0); this kit's own contribution is the container writer. |
-| A library plus a CLI, with the schema kept in data files. | A GUI, and not a stable 1.0 API. **Version 0.6.1.dev0** (the repo used to declare 0.1.0 while 0.5.0 was published; fixed 17-nov), mod format version 1. Interfaces still move until 1.0. |
+| A library plus a CLI, with the schema kept in data files. | A GUI, and not a stable 1.0 API. **Version 0.7.0.dev0** (the repo used to declare 0.1.0 while 0.5.0 was published; fixed 17-nov), mod format version 1. Interfaces still move until 1.0. |
 
 ---
 
@@ -144,7 +144,8 @@ are no scripts to run. Four real ones live in
 id = "ejemplo-editar-fila"
 version = "0.1.0"
 name = "ejemplo-editar-fila"
-authors = ["..."]
+# autor: rellénalo a mano; el kit nunca copia tu login del sistema (USER/USERNAME)
+authors = ["tu nombre"]
 game = ["2.0.1a"]
 mod_format = 1
 title = "pokopia"

@@ -67,10 +67,10 @@ from .mod import (
     merge_mods,
     validate,
 )
-from .mod.manifest import ContainerView, LEGACY_MANIFEST, MANIFEST
+from .mod.manifest import ContainerView, LEGACY_MANIFEST, MANIFEST, LICENSE_SPDX
 from .mod.errors import Issue, Report
 from .mod.f21_validate import LineMap, annotate, validate_contract
-from .mod.toml_manifest import dumps, id_problema
+from .mod.toml_manifest import AUTOR_PLACEHOLDER, dumps, id_problema
 from .mod.example import escribir as escribir_ejemplo
 from .mod.overlay import (
     aviso_separador,
@@ -341,8 +341,9 @@ TEMPLATE = {
     "mod_format": 1,
     "name": "",
     "version": "0.1.0",
-    "authors": [],
+    "authors": [AUTOR_PLACEHOLDER],
     "description": "",
+    "license": LICENSE_SPDX,
     "game": {"title": "pokopia", "version": "",
              "container_md5": {paths.BIN_NAME: "", paths.IDX_NAME: ""}},
     "requires": [],
@@ -371,7 +372,6 @@ def cmd_mod_new(args) -> int:
     manifest = os.path.join(target, MANIFEST)
     doc = json.loads(json.dumps(TEMPLATE))
     doc["name"] = name
-    doc["authors"] = [os.environ.get("USERNAME") or os.environ.get("USER") or "?"]
     doc["game"]["version"] = "2.0.1a"
     doc["game"]["container_md5"] = md5s
     os.makedirs(target, exist_ok=True)

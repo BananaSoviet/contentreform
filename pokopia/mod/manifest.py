@@ -44,6 +44,10 @@ from .addcopy import Add, Copy, parse_adds, parse_copies, validate_adds, validat
 from .errors import ModError, Report
 
 MOD_FORMAT = 1
+#: SPDX unico del kit (PEP 639, `pyproject.toml`; texto en LICENSE). Es lo que
+#: escriben `pkp mod new` y `pkp mod example` en `license` del mod.toml: Modtopia
+#: lo lee en `mt_manifest.c:140` y el hub de Recompia lo exige.
+LICENSE_SPDX = "GPL-3.0-or-later"
 #: Manifiesto adoptado (`D-025`) y manifiesto legado (`D-028`, camino b).
 #: Se lee el que haya en la carpeta, con preferencia por el adoptado; se
 #: **escribe** siempre el adoptado.
@@ -182,6 +186,7 @@ class Mod:
     version: str = ""
     authors: list[str] = field(default_factory=list)
     description: str = ""
+    license: str = ""
     title: str = ""
     game_version: str = ""
     container_md5: dict[str, str] = field(default_factory=dict)
@@ -293,8 +298,8 @@ def parse_mod(doc: dict, manifest: str) -> Mod:
     # Union de las dos ramas: M0 aporta `display_name` (el `name` de Modtopia
     # cuando difiere del `id`), M3 aporta las operaciones `add`/`copy`.
     known_keys = {"mod_format", "name", "display_name", "version", "authors",
-                  "description", "game", "requires", "edits", "text", "files",
-                  "romfs", "merged_from", "add", "copy"}
+                  "description", "license", "game", "requires", "edits", "text",
+                  "files", "romfs", "merged_from", "add", "copy", "data"}
     for key in doc:
         if key not in known_keys:
             rep.warning("schema.unknown_key", "clave desconocida ignorada: %r" % key)
@@ -331,6 +336,7 @@ def parse_mod(doc: dict, manifest: str) -> Mod:
         rep.warning("schema.version", "'version' %r no parece semver (x.y.z)"
                     % mod.version)
     mod.description = _str_field(doc, "description", rep, required=False)
+    mod.license = _str_field(doc, "license", rep, required=False)
 
     authors = doc.get("authors")
     if authors is None:

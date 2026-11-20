@@ -16,8 +16,8 @@ from __future__ import annotations
 import os
 
 from .. import paths
-from .manifest import MANIFEST
-from .toml_manifest import dumps
+from .manifest import LICENSE_SPDX, MANIFEST
+from .toml_manifest import AUTOR_PLACEHOLDER, dumps
 
 #: Ruta del romfs que sustituye el ejemplo. Es una ruta del arbol, no contenido:
 #: los bytes que se sirven son los de `PAYLOAD`.
@@ -31,9 +31,10 @@ def plantilla(md5s: dict[str, str]) -> dict:
         "mod_format": 1,
         "name": NOMBRE,
         "version": "0.1.0",
-        "authors": ["tu nombre"],
+        "authors": [AUTOR_PLACEHOLDER],
         "description": "Ejemplo generado por `pkp mod example`: sustituye un fichero del "
                        "romfs por bytes propios. No es un asset valido.",
+        "license": LICENSE_SPDX,
         "game": {"title": "pokopia", "version": "2.0.1a", "container_md5": md5s},
         "requires": [],
         "edits": [],

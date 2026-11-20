@@ -28,6 +28,9 @@ la envoltura, y por eso el mapeo esta escrito una sola vez, aqui:
 `game.version`          `game = ["2.0.1a"]`            lista de builds; el kit
                                                        valida contra la primera
 `game.container_md5`    `container_md5`                raiz
+`license`               `license`                      SPDX; Modtopia lo lee (mt_manifest.c:140)
+`—`                     `data`                         raiz; Modtopia lee la carpeta de datos
+                                                       (`assets` por defecto), ver `carpeta_datos`
 `requires`              `[[dependencies]]`             id/version/required/order
 `mod_format`            `mod_format`                   por defecto `1` al leer
 resto (`edits`, `text`, `romfs`, `files`, `merged_from`)
@@ -48,8 +51,8 @@ from .manifest import MOD_FORMAT
 
 #: Orden fijo de las claves escalares al escribir. Determinista a proposito:
 #: `pack` tiene que dar el mismo byte dos veces (M6 de `docs/PLAN-1.0.md`).
-ORDEN = ("id", "version", "name", "authors", "description", "game",
-         "mod_format", "title", "container_md5")
+ORDEN = ("id", "version", "name", "authors", "description", "license", "game",
+         "mod_format", "title", "container_md5", "data")
 
 #: Orden fijo de las tablas de arrays al escribir.
 ORDEN_TABLAS = ("edits", "text", "romfs", "files", "dependencies", "merged_from")
@@ -61,6 +64,11 @@ CABECERA = (
     "# Modtopia lee id, version, name, authors, description, game y [[dependencies]]\n"
     "# e ignora el resto: mt_manifest_parse solo pide las claves que conoce.\n"
 )
+
+#: Autor por defecto de los manifiestos que genera el kit: neutro y para rellenar
+#: a mano. Nunca se toma de USER/USERNAME del sistema (D-025/D-028; PROCEDENCIA §5:
+#: no publicar datos personales del autor sin querer).
+AUTOR_PLACEHOLDER = "tu nombre"
 
 #: Regla de `id` de Modtopia, literal de `mt_manifest.c:250-261` (`mt_id_valid`):
 #: 2-64 caracteres, el primero en minuscula, y solo letras, digitos, `_` y `-`.
@@ -152,6 +160,8 @@ def from_toml(raw: dict) -> dict:
         doc["version"] = raw["version"]
     if "description" in raw:
         doc["description"] = raw["description"]
+    if "license" in raw:
+        doc["license"] = raw["license"]
     display = raw.get("name")
     if isinstance(display, str) and display and display != doc["name"]:
         doc["display_name"] = display
@@ -176,8 +186,8 @@ def from_toml(raw: dict) -> dict:
 #: Claves de `mod.toml` que este modulo traduce; todo lo demas pasa tal cual.
 _MAPEADAS = frozenset(("id", "name", "game", "title", "container_md5",
                        "dependencies", "mod_format", "version", "authors",
-                       "description", "edits", "text", "romfs", "files",
-                       "merged_from"))
+                       "description", "license", "edits", "text", "romfs",
+                       "files", "merged_from"))
 
 
 # -----------------------------------------------------------------------
@@ -256,6 +266,33 @@ def _tabla(prefijo: str, item: dict) -> list[str]:
     return lineas
 
 
+def carpeta_datos(doc: dict) -> str | None:
+    """Carpeta de datos que Modtopia debe montar, deducida de `romfs[].file`.
+
+    Modtopia lee `data` de la raiz del `mod.toml` y, si no está, usa `assets`
+    (`mt_manifest.c:145`). El kit escribe los ficheros bajo `payload/`, asi que
+    dejar la clave fuera haria que el loader buscara en la carpeta equivocada.
+
+    Se deduce del primer componente de cada `romfs[].file` (la ruta usa `/`,
+    `romfs_path_problem` lo exige). Si todas las entradas comparten carpeta,
+    esa es la respuesta; si no hay entradas, estan en la raiz o hay varias
+    carpetas, se devuelve `None` para no inventar un valor que no cuadre con
+    los ficheros que realmente viajan en el paquete.
+    """
+    romfs = doc.get("romfs")
+    if not isinstance(romfs, (list, tuple)) or not romfs:
+        return None
+    carpetas: set[str] = set()
+    for item in romfs:
+        if not isinstance(item, dict) or not isinstance(item.get("file"), str):
+            return None
+        partes = item["file"].split("/")
+        if len(partes) < 2 or not partes[0]:
+            return None
+        carpetas.add(partes[0])
+    return carpetas.pop() if len(carpetas) == 1 else None
+
+
 def _a_toml(doc: dict) -> dict:
     """Documento del kit -> documento en la forma de `mod.toml`.
 
@@ -293,6 +330,14 @@ def _a_toml(doc: dict) -> dict:
     requires = doc.get("requires") or []
     if requires:
         salida["dependencies"] = _dependencias(requires)
+    # `data` es la clave de Modtopia que dice donde estan los ficheros del
+    # paquete (mt_manifest.c:145). Si el autor la escribio, se respeta; si no,
+    # se deduce de las rutas reales de romfs[] para que nunca diga `payload`
+    # cuando los ficheros estan en otra carpeta.
+    if "data" not in salida:
+        datos = carpeta_datos(doc)
+        if datos is not None:
+            salida["data"] = datos
     return salida
 
 

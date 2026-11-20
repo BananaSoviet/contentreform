@@ -1,7 +1,7 @@
 # Install a mod, uninstall it, and check the result
 
 **A two-page guide for someone who has never opened this repository.** It uses
-ContentReForm 0.6.1.dev0. You own a copy of the game; this kit never ships game
+ContentReForm 0.7.0.dev0. You own a copy of the game; this kit never ships game
 files and never repacks the game for you.
 
 Installing means putting a **`.pkmod` package** into a folder the game reads
@@ -11,8 +11,8 @@ checks the whole setup without starting the game.
 
 ## Before you start
 
-* `pkp --version` prints `0.6.1.dev0`. If `pkp` is not on your PATH, install the
-  `0.6.1.dev0` wheel first.
+* `pkp --version` prints `0.7.0.dev0`. If `pkp` is not on your PATH, install the
+  `0.7.0.dev0` wheel first.
 * You need a `.pkmod` package. If you have not made one yet, see
   [Make a mod](../MAKE-A-MOD.md); to try the flow now, the kit can generate one
   with `pkp mod example my-example-mod` (23 bytes written by the kit, no game
