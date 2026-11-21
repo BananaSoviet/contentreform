@@ -14,7 +14,7 @@ usage, the README wins.
 
 ## 1 · Who, and what this is not
 
-`pokopia-tools` is a data toolkit for the container format of one game build, written by
+**ContentReForm** is a toolkit for data mods of one game build, written by
 **BananaSoviet** ([@BananaSoviet](https://github.com/BananaSoviet)), with AI
 assistance as declared in §6.
 
